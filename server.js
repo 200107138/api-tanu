@@ -60,7 +60,6 @@ global.jwtSecret = "jwtSecret1234567890"
 const auth = require("./modules/auth")
 const MONGODB_CONNECT_URI = process.env.MONGODB_CONNECT_URI
 const users = []
-global.apiURL = "http://localhost:3000"
 
 const PORT = process.env.PORT
 http.listen(PORT, "0.0.0.0", function () {
