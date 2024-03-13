@@ -78,72 +78,64 @@ MongoClient.connect(MONGODB_CONNECT_URI)
 		    result.send("пкепекепек")
 		})
 		socketIO.on("connection", function (socket) {
-			socket.on("connected", function (_id) {
-				users[_id] = socket.id
-			})
-
-			socket.on("allMessagesRead", function (receiverID, myID) {
-				socketIO.to(users[receiverID]).emit("allMessagesRead-" + myID, "1")
-			})
-
-			socket.on("messageRead", async function (message) {
-				message = JSON.parse(message)
-
-				await global.db.collection("users").findOneAndUpdate({
-                    $and: [{
-                        _id: ObjectId(message.receiver._id)
-                    }, {
-                        "contacts._id": ObjectId(message.sender._id)
-                    }]
-                }, {
-                    $set: {
-                        "contacts.$.hasUnreadMessage": 0
-                    }
-                })
-
-                await db.collection("messages").findOneAndUpdate({
-                    _id: ObjectId(message._id)
-                }, {
-                    $set: {
-                        isRead: true
-                    }
-                })
-
-				socketIO.to(users[message.sender._id]).emit("messageRead", JSON.stringify(message))
-			})
-
-			socket.on("newMessage", function (message) {
-				message = JSON.parse(message)
-				socketIO.to(users[message.receiver._id]).emit("newMessage", JSON.stringify(message))
-			})
-		})
-
-	    app.post("/saveFCMToken", auth, async function (request, result) {
-		    const user = request.user
-		    const token = request.fields.token
-
-		    if (!token) {
-		    	result.json({
-			        status: "error",
-			        message: "Please fill all fields."
-			    })
-			    return
-		    }
-		 
-		    // update JWT of user in database
-		    await global.db.collection("users").findOneAndUpdate({
-		        _id: user._id
-		    }, {
-		        $set: {
-		            fcmToken: token
-		        }
-		    })
-		 
-		    result.json({
-		        status: "success",
-		        message: "Token saved successfully."
-		    })
-		})
+			socket.on("connected", async function (_chat_room_id, access_token) {
+				try {
+					// Use auth middleware to get user_id from access token
+					const user_id = getUserIdFromAccessToken(access_token);
+					
+					// Add user_id to the chat room
+					chat_rooms[_chat_room_id][user_id] = socket.id;
+				} catch (error) {
+					console.error("Error while processing connected event:", error);
+				}
+			});
+		
+			socket.on("newMessage", async function (message, access_token) {
+				try {
+					// Use auth middleware to get user_id from access token
+					const user_id = getUserIdFromAccessToken(access_token);
+					
+					// Fetch participants from database based on message._id (assuming this is the chat room ID)
+					const participants = await getParticipants(message._id);
+					
+					// Find receiver user_id (assuming there are only 2 participants)
+					const receiver_id = participants.find(id => id !== user_id);
+					
+					// Emit new message to the receiver
+					socketIO.to(chat_rooms[message._id][receiver_id]).emit("newMessage", JSON.stringify(message));
+				} catch (error) {
+					console.error("Error while processing newMessage event:", error);
+				}
+			});
+		});
+		
+		// Function to retrieve user_id from access token using the auth middleware
+		function getUserIdFromAccessToken(access_token) {
+			// Implement logic to extract user_id from access_token using the auth middleware
+			// For example:
+			const decoded = jwt.verify(access_token, global.jwtSecret);
+			return decoded.userId;
+		}
+		
+		// Function to fetch participants based on chat room ID from the database
+		async function getParticipants(chat_room_id) {
+			try {
+				// Fetch participants from the user_chat_rooms collection based on the chat_room_id
+				const participants = await global.db.collection("user_chat_rooms").find({
+					chat_room_id: new ObjectId(chat_room_id)
+				}).toArray();
+		
+				// Extract user IDs from the participants
+				const userIds = participants.map(participant => participant.user_id);
+		
+				return userIds;
+			} catch (error) {
+				console.error("Error fetching participants:", error);
+				throw error; // Throw the error to handle it in the caller function
+			}
+		}
+		
+		
 
 	    // route for logout request
 		app.post("/logout", async function (request, result) {
@@ -160,110 +152,6 @@ MongoClient.connect(MONGODB_CONNECT_URI)
 			})
 		})
 		
-
-		app.post("/updateProfile", auth, async function (request, result) {
-		    const user = request.user
-			const name = request.fields.name ?? ""
-			const base64 = request.fields.base64 ?? ""
-
-			if (!name) {
-				result.json({
-					status: "error",
-					message: "Please enter all fields."
-				})
-
-				return
-			}
-
-			if (base64) {
-				const filePath = "uploads/profiles/" + user._id + ".png"
-				fileSystem.writeFile(filePath, base64, "base64", function (error) {
-					if (error) {
-						console.log(error)
-					}
-				})
-
-				await db.collection("users").findOneAndUpdate({
-					_id: user._id
-				}, {
-					$set: {
-						name: name,
-						image: filePath
-					}
-				})
-			} else {
-				await db.collection("users").findOneAndUpdate({
-					_id: user._id
-				}, {
-					$set: {
-						name: name
-					}
-				})
-			}
-		 
-		    result.json({
-		        status: "success",
-		        message: "Profile has been updated."
-		    })
-		})
-
-		app.post("/fetchUser", auth, async function (request, result) {
-			const user = request.user
-			const _id = request.fields._id ?? ""
-
-			if (!_id) {
-				result.json({
-					status: "error",
-					message: "Required parameter _id is missing."
-				})
-
-				return
-			}
-
-			const userObj = await db.collection("users").findOne({
-				_id: ObjectId(_id)
-			})
-
-			if (userObj == null) {
-				result.json({
-					status: "error",
-					message: "User does not exists."
-				})
-
-				return
-			}
-
-			const exists = await fileSystem.existsSync(userObj.image)
-			if (exists) {
-				userObj.image = apiURL + "/" + userObj.image
-			} else {
-				userObj.image = ""
-			}
-		 
-		    result.json({
-		        status: "success",
-		        message: "Data has been fetched.",
-		        user: {
-					_id: userObj._id,
-					name: userObj.name,
-					phone: userObj.phone,
-					image: userObj.image,
-					createdAt: userObj.createdAt
-				},
-				me: user
-		    })
-		})
-
-	    app.post("/getUser", auth, async function (request, result) {
-		    const user = request.user
-		 
-		    result.json({
-		        status: "success",
-		        message: "Data has been fetched.",
-		        user: user
-		    })
-		})
-
 
 	    // route for login requests
 		app.post("/login", async function (request, result) {
@@ -303,27 +191,27 @@ MongoClient.connect(MONGODB_CONNECT_URI)
 
     // Generate access and refresh tokens
     const accessToken = jwt.sign({
-        userId: user._id.toString(),
+        user_id: user._id.toString(),
         fingerprint: {
-            userAgent: userAgent,
-            acceptHeaders: acceptHeaders,
+            user_agent: userAgent,
+            accept_headers: acceptHeaders,
             geoip: geoip
         }
     }, global.jwtSecret, { expiresIn: "15m" });
 
     const refreshToken = jwt.sign({
-        userId: user._id.toString(),
+        user_id: user._id.toString(),
         fingerprint: {
-            userAgent: userAgent,
-            acceptHeaders: acceptHeaders,
+            user_agent: userAgent,
+            accept_headers: acceptHeaders,
             geoip: geoip
         }
     }, global.jwtSecret);
 
     // Store refresh session in database
     await global.db.collection("refresh_sessions").insertOne({
-        userId: user._id.toString(),
-        refreshToken: refreshToken,
+        user_id: user._id.toString(),
+        refresh_token: refreshToken,
         fingerprint: {
             userAgent: userAgent,
             acceptHeaders: acceptHeaders,
@@ -332,11 +220,11 @@ MongoClient.connect(MONGODB_CONNECT_URI)
     });
 
     result.json({
-        userId: user._id,
+        user_id: user._id,
         status: "success",
         message: "Login successfully.",
-        accessToken: accessToken,
-        refreshToken: refreshToken
+        access_token: accessToken,
+        refresh_token: refreshToken
     });
 });
 
@@ -375,7 +263,7 @@ MongoClient.connect(MONGODB_CONNECT_URI)
 			const newUser = await global.db.collection("users").insertOne({
 				email: email,
 				password: hash,
-				createdAt: createdAt
+				created_at: createdAt
 			})
 		
 			// Generate fingerprint
@@ -399,8 +287,8 @@ MongoClient.connect(MONGODB_CONNECT_URI)
 		
 			// Store refresh session in database
 			await global.db.collection("refresh_sessions").insertOne({
-				userId: newUser.insertedId.toString(),
-				refreshToken: refreshToken,
+				user_id: newUser.insertedId.toString(),
+				refresh_token: refreshToken,
 				fingerprint: fingerprint
 			})
 		
@@ -413,27 +301,69 @@ MongoClient.connect(MONGODB_CONNECT_URI)
 	})
 })
 
-app.get("/getConversations", auth, async function (request, result) {
-    const userId = request.user._id; // Retrieve userId from the authenticated user object
-    
+app.get("/getChatRooms", auth, async function (request, result) {
+    const user_id = request.user._id; // Retrieve userId from the authenticated user object
+
     try {
-        // Find all conversations where the userId is either userId1 or userId2
-        const conversations = await global.db.collection("conversations").find({
-            $or: [
-                { userId1: userId },
-                { userId2: userId }
-            ]
-        }).toArray();
+        // Fetch all chat room ids associated with the current user
+        const user_chat_room_ids = await global.db.collection("user_chat_rooms")
+            .find({ user_id: user_id })
+            .toArray()
+            .map(user_chat_room => user_chat_room.chat_room_id);
+
+        // Fetch chat room information for the retrieved chat room ids
+        const chat_rooms = await global.db.collection("chat_rooms")
+            .find({ _id: { $in: user_chat_room_ids } })
+            .toArray();
 
         result.json({
             status: "success",
-            message: "Conversations retrieved successfully.",
-            conversations: conversations
+            message: "Chat rooms retrieved successfully.",
+            chat_rooms: chat_rooms
         });
     } catch (error) {
         result.json({
             status: "error",
-            message: "Error fetching conversations.",
+            message: "Error fetching chat rooms.",
+            error: error.message
+        });
+    }
+});
+
+
+app.get("/getMessages", auth, async function (request, result) {
+    const user_id = request.user._id; // Retrieve userId from the authenticated user object
+    const provided_chat_room_id = request.query.chat_room_id; // Retrieve chatroomId from the request query parameters
+
+    try {
+        // Check if the user is authorized to access the provided chat room
+        const user_chat_room = await global.db.collection("user_chat_rooms").findOne({
+            user_id: user_id,
+            chat_room_id: provided_chat_room_id
+        });
+
+        if (!user_chat_room) {
+            result.json({
+                status: "error",
+                message: "User is not authorized to access this chat room."
+            });
+            return;
+        }
+
+        // Fetch all messages for the provided chat room
+        const messages = await global.db.collection("messages").find({
+            chat_room_id: provided_chat_room_id
+        }).toArray();
+
+        result.json({
+            status: "success",
+            message: "Messages retrieved successfully.",
+            messages: messages
+        });
+    } catch (error) {
+        result.json({
+            status: "error",
+            message: "Error fetching messages.",
             error: error.message
         });
     }
