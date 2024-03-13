@@ -45,7 +45,7 @@ const socketIO = require("socket.io")(http, {
         origin: "*"
     }
 })
-
+global.apiURL = "http://192.168.0.23:3000"
 const mongodb = require("mongodb")
 const MongoClient = mongodb.MongoClient
 const ObjectId = mongodb.ObjectId
@@ -59,7 +59,6 @@ global.jwtSecret = "jwtSecret1234567890"
 
 const auth = require("./modules/auth")
 const MONGODB_CONNECT_URI = process.env.MONGODB_CONNECT_URI
-const users = []
 
 const PORT = process.env.PORT
 http.listen(PORT, "0.0.0.0", function () {
@@ -294,21 +293,21 @@ MongoClient.connect(MONGODB_CONNECT_URI)
 		
 	})
 })
-
 app.get("/getChatRooms", auth, async function (request, result) {
     const userId = request.user._id; // Retrieve userId from the authenticated user object
 
     try {
         // Fetch all chat room ids associated with the current user
-        const userChatRoomIds = await global.db.collection("user_chat_rooms")
-            .find({ user_id: userId })
-            .toArray()
-            .map(userChatRoom => userChatRoom.chat_room_id);
+        const userChatRooms = await global.db.collection("user_chat_rooms").find({
+            user_id: userId
+        }).toArray();
+        // Extract chat room IDs from the user_chat_rooms
+        const chatRoomIds = userChatRooms.map(chatRoom => chatRoom.chat_room_id);
 
-        // Fetch chat room information for the retrieved chat room ids
-        const chatRooms = await global.db.collection("chat_rooms")
-            .find({ _id: { $in: userChatRoomIds } })
-            .toArray();
+        // Fetch chat room information from the chat_rooms collection
+        const chatRooms = await global.db.collection("chat_rooms").find({
+            _id: { $in: chatRoomIds }
+        }).toArray();
 
         result.json({
             status: "success",
@@ -325,15 +324,17 @@ app.get("/getChatRooms", auth, async function (request, result) {
 });
 
 
+
+
 app.get("/getMessages", auth, async function (request, result) {
     const userId = request.user._id; // Retrieve userId from the authenticated user object
     const providedChatRoomId = request.query.chatRoomId; // Retrieve chatroomId from the request query parameters
-
+	console.log("сррррр:", providedChatRoomId);
     try {
         // Check if the user is authorized to access the provided chat room
         const userChatRoom = await global.db.collection("user_chat_rooms").findOne({
             user_id: userId,
-            chat_room_id: providedChatRoomId
+            chat_room_id: new ObjectId(providedChatRoomId)
         });
 
         if (!userChatRoom) {
@@ -346,7 +347,7 @@ app.get("/getMessages", auth, async function (request, result) {
 
         // Fetch all messages for the provided chat room
         const messages = await global.db.collection("messages").find({
-            chat_room_id: providedChatRoomId
+            chat_room_id: new ObjectId(providedChatRoomId)
         }).toArray();
 
         result.json({

@@ -24,7 +24,7 @@ module.exports = async function (request, result, next) {
         }
 
         const userObj = {
-            _id: userId,
+            _id: new ObjectId(userId),
             email: user.email
         };
         request.user = userObj;
