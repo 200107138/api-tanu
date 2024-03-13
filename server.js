@@ -191,19 +191,19 @@ MongoClient.connect(MONGODB_CONNECT_URI)
 
     // Generate access and refresh tokens
     const accessToken = jwt.sign({
-        user_id: user._id.toString(),
+        userId: user._id.toString(),
         fingerprint: {
-            user_agent: userAgent,
-            accept_headers: acceptHeaders,
+            userAgent: userAgent,
+            acceptHeaders: acceptHeaders,
             geoip: geoip
         }
     }, global.jwtSecret, { expiresIn: "15m" });
 
     const refreshToken = jwt.sign({
-        user_id: user._id.toString(),
+        userId: user._id.toString(),
         fingerprint: {
-            user_agent: userAgent,
-            accept_headers: acceptHeaders,
+            userAgent: userAgent,
+            acceptHeaders: acceptHeaders,
             geoip: geoip
         }
     }, global.jwtSecret);
@@ -274,12 +274,6 @@ MongoClient.connect(MONGODB_CONNECT_URI)
 				expressFingerprint.geoip
 			]})(request, {}, () => {})
 		
-			// Generate access and refresh tokens
-			const accessToken = jwt.sign({
-				userId: newUser.insertedId.toString(),
-				fingerprint: fingerprint
-			}, global.jwtSecret, { expiresIn: "30m" })
-		
 			const refreshToken = jwt.sign({
 				userId: newUser.insertedId.toString(),
 				fingerprint: fingerprint
@@ -302,24 +296,24 @@ MongoClient.connect(MONGODB_CONNECT_URI)
 })
 
 app.get("/getChatRooms", auth, async function (request, result) {
-    const user_id = request.user._id; // Retrieve userId from the authenticated user object
+    const userId = request.user._id; // Retrieve userId from the authenticated user object
 
     try {
         // Fetch all chat room ids associated with the current user
-        const user_chat_room_ids = await global.db.collection("user_chat_rooms")
-            .find({ user_id: user_id })
+        const userChatRoomIds = await global.db.collection("user_chat_rooms")
+            .find({ user_id: userId })
             .toArray()
-            .map(user_chat_room => user_chat_room.chat_room_id);
+            .map(userChatRoom => userChatRoom.chat_room_id);
 
         // Fetch chat room information for the retrieved chat room ids
-        const chat_rooms = await global.db.collection("chat_rooms")
-            .find({ _id: { $in: user_chat_room_ids } })
+        const chatRooms = await global.db.collection("chat_rooms")
+            .find({ _id: { $in: userChatRoomIds } })
             .toArray();
 
         result.json({
             status: "success",
             message: "Chat rooms retrieved successfully.",
-            chat_rooms: chat_rooms
+            chat_rooms: chatRooms
         });
     } catch (error) {
         result.json({
@@ -332,17 +326,17 @@ app.get("/getChatRooms", auth, async function (request, result) {
 
 
 app.get("/getMessages", auth, async function (request, result) {
-    const user_id = request.user._id; // Retrieve userId from the authenticated user object
-    const provided_chat_room_id = request.query.chat_room_id; // Retrieve chatroomId from the request query parameters
+    const userId = request.user._id; // Retrieve userId from the authenticated user object
+    const providedChatRoomId = request.query.chatRoomId; // Retrieve chatroomId from the request query parameters
 
     try {
         // Check if the user is authorized to access the provided chat room
-        const user_chat_room = await global.db.collection("user_chat_rooms").findOne({
-            user_id: user_id,
-            chat_room_id: provided_chat_room_id
+        const userChatRoom = await global.db.collection("user_chat_rooms").findOne({
+            user_id: userId,
+            chat_room_id: providedChatRoomId
         });
 
-        if (!user_chat_room) {
+        if (!userChatRoom) {
             result.json({
                 status: "error",
                 message: "User is not authorized to access this chat room."
@@ -352,7 +346,7 @@ app.get("/getMessages", auth, async function (request, result) {
 
         // Fetch all messages for the provided chat room
         const messages = await global.db.collection("messages").find({
-            chat_room_id: provided_chat_room_id
+            chat_room_id: providedChatRoomId
         }).toArray();
 
         result.json({
