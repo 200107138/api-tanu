@@ -45,7 +45,7 @@ const socketIO = require("socket.io")(http, {
         origin: "*"
     }
 })
-global.apiURL = "http://192.168.0.23:3000"
+
 const mongodb = require("mongodb")
 const MongoClient = mongodb.MongoClient
 const ObjectId = mongodb.ObjectId
