@@ -4,6 +4,7 @@ const expressFingerprint = require('express-fingerprint');
 const http = require("http").createServer(app)
 require('dotenv').config();
 
+app.use(express.json())
 app.use(function (req, res, next) {
  
     // Website you wish to allow to connect
