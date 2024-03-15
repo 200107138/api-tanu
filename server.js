@@ -1,5 +1,6 @@
 const express = require("express")
 const app = express()
+const formidableMiddleware = require('express-formidable');
 const expressFingerprint = require('express-fingerprint');
 const http = require("http").createServer(app)
 require('dotenv').config();
@@ -22,11 +23,9 @@ app.use(function (req, res, next) {
     // Pass to next layer of middleware
     next()
 })
-// module required for parsing FormData values
-const expressFormidable = require("express-formidable")
- 
-// setting the middleware
-app.use(expressFormidable())
+
+app.use(express.json());
+
 app.use(expressFingerprint({
 	parameters: [
 	  // Defaults
@@ -37,7 +36,7 @@ app.use(expressFingerprint({
   }));
 // and verify the password as well
 const bcryptjs = require("bcryptjs")
-
+global.apiURL = "http://localhost:3000"
 // sockets are used for realtime communication
 const socketIO = require("socket.io")(http, {
     cors: {
@@ -136,9 +135,8 @@ MongoClient.connect(MONGODB_CONNECT_URI)
 	    // route for login requests
 		app.post("/login", async function (request, result) {
 			console.log("login called");
-    const email = request.fields.email;
-    const password = request.fields.password;
-    
+
+    const { email, password } = request.body;
     // Get the fingerprint data from the request
     const fingerprintData = request.fingerprint;
     const userAgent = fingerprintData.useragent;
@@ -208,11 +206,8 @@ MongoClient.connect(MONGODB_CONNECT_URI)
     });
 });
 
-		
-	 
-	    app.post("/register", async function (request, result) {
-			const email = request.fields.email
-			const password = request.fields.password
+	app.post("/register", express.json(), async function (request, result) {
+            const { email, password } = request.body;
 			const createdAt = new Date().getTime()
 		
 			if (!email || !password) {
@@ -345,10 +340,10 @@ app.get("/getMessages", auth, async function (request, result) {
     }
 });
 
-app.post("/postMessage", auth, async (request, result) => {
+app.post("/postMessage", express.json(), auth, async (request, result) => {
     try {
-        const messageText = request.fields.messageText
-        const chatRoomId = request.fields.chatRoomId
+        // Extract message text and chat room ID from the request body
+        const { messageText, chatRoomId } = request.body;
         // Validate input data (e.g., check if messageText and chatRoomId are provided)
 
         // Retrieve user ID from the authenticated user object
