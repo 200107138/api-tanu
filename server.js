@@ -56,7 +56,7 @@ const jwt = require("jsonwebtoken")
 
 // secret JWT key
 global.jwtSecret = "jwtSecret1234567890"
-
+const chatRooms = []
 const auth = require("./modules/auth")
 const MONGODB_CONNECT_URI = process.env.MONGODB_CONNECT_URI
 
@@ -77,63 +77,45 @@ MongoClient.connect(MONGODB_CONNECT_URI)
 		    result.send("пкепекепек")
 		})
 		socketIO.on("connection", function (socket) {
-			socket.on("connected", async function (_chat_room_id, access_token) {
+			socket.on("connected", async function (chatRoomId, accessToken) {
 				try {
 					// Use auth middleware to get user_id from access token
-					const user_id = getUserIdFromAccessToken(access_token);
+					const userId = getUserIdFromAccessToken(accessToken);
 					
 					// Add user_id to the chat room
-					chat_rooms[_chat_room_id][user_id] = socket.id;
+					chatRooms[chatRoomId][new ObjectId(userId)] = socket.id;
 				} catch (error) {
 					console.error("Error while processing connected event:", error);
 				}
 			});
-		
-			socket.on("newMessage", async function (message, access_token) {
-				try {
-					// Use auth middleware to get user_id from access token
-					const user_id = getUserIdFromAccessToken(access_token);
-					
-					// Fetch participants from database based on message._id (assuming this is the chat room ID)
-					const participants = await getParticipants(message._id);
-					
-					// Find receiver user_id (assuming there are only 2 participants)
-					const receiver_id = participants.find(id => id !== user_id);
-					
-					// Emit new message to the receiver
-					socketIO.to(chat_rooms[message._id][receiver_id]).emit("newMessage", JSON.stringify(message));
-				} catch (error) {
-					console.error("Error while processing newMessage event:", error);
-				}
-			});
+            socket.on("newMessage", async function (message) {
+                try {
+                    // Fetch all receiver IDs from the user_chat_rooms collection
+                    const userChatRooms = await global.db.collection("user_chat_rooms").find({
+                        chat_room_id: message.chat_room_id
+                    }).toArray();
+            
+                    // Iterate through each userChatRoom and emit newMessage event to the corresponding socket
+                    userChatRooms.forEach(userChatRoom => {
+                        const receiverId = chatRooms[userChatRoom.chat_room_id][userChatRoom.sender_id];
+                        if (receiverId) {
+                            socketIO.to(receiverId).emit("newMessage", JSON.stringify(message));
+                        }
+                    });
+                } catch (error) {
+                    console.error("Error emitting newMessage:", error);
+                }
+            });
+            
 		});
 		
 		// Function to retrieve user_id from access token using the auth middleware
-		function getUserIdFromAccessToken(access_token) {
+		function getUserIdFromAccessToken(accessToken) {
 			// Implement logic to extract user_id from access_token using the auth middleware
 			// For example:
-			const decoded = jwt.verify(access_token, global.jwtSecret);
+			const decoded = jwt.verify(accessToken, global.jwtSecret);
 			return decoded.userId;
 		}
-		
-		// Function to fetch participants based on chat room ID from the database
-		async function getParticipants(chat_room_id) {
-			try {
-				// Fetch participants from the user_chat_rooms collection based on the chat_room_id
-				const participants = await global.db.collection("user_chat_rooms").find({
-					chat_room_id: new ObjectId(chat_room_id)
-				}).toArray();
-		
-				// Extract user IDs from the participants
-				const userIds = participants.map(participant => participant.user_id);
-		
-				return userIds;
-			} catch (error) {
-				console.error("Error fetching participants:", error);
-				throw error; // Throw the error to handle it in the caller function
-			}
-		}
-		
 		
 
 	    // route for logout request
@@ -359,6 +341,38 @@ app.get("/getMessages", auth, async function (request, result) {
         result.json({
             status: "error",
             message: "Error fetching messages.",
+            error: error.message
+        });
+    }
+});
+
+app.post("/postMessage", auth, async (request, result) => {
+    try {
+        // Extract message text and chat room ID from the request body
+        const { messageText, chatRoomId } = request.body;
+
+        // Validate input data (e.g., check if messageText and chatRoomId are provided)
+
+        // Retrieve user ID from the authenticated user object
+        const userId = request.user._id;
+
+        // Create a new message document in the messages collection
+        const newMessage = await global.db.collection("messages").insertOne({
+            text: messageText,
+            chat_room_id: new ObjectId(chatRoomId),
+            sender_id: userId
+        });
+        socketIO.emit("newMessage", { message: newMessage });
+
+        result.json({
+            status: "success",
+            message: "Message posted successfully."
+        });
+    } catch (error) {
+        console.error("Error posting message:", error);
+        result.status(500).json({
+            status: "error",
+            message: "Failed to post message.",
             error: error.message
         });
     }
