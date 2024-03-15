@@ -4,7 +4,6 @@ const expressFingerprint = require('express-fingerprint');
 const http = require("http").createServer(app)
 require('dotenv').config();
 
-app.use(express.json())
 app.use(function (req, res, next) {
  
     // Website you wish to allow to connect
@@ -23,7 +22,6 @@ app.use(function (req, res, next) {
     // Pass to next layer of middleware
     next()
 })
-
 // module required for parsing FormData values
 const expressFormidable = require("express-formidable")
  
@@ -349,9 +347,8 @@ app.get("/getMessages", auth, async function (request, result) {
 
 app.post("/postMessage", auth, async (request, result) => {
     try {
-        // Extract message text and chat room ID from the request body
-        const { messageText, chatRoomId } = request.body;
-
+        const messageText = request.fields.messageText
+        const chatRoomId = request.fields.chatRoomId
         // Validate input data (e.g., check if messageText and chatRoomId are provided)
 
         // Retrieve user ID from the authenticated user object
